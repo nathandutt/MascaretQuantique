@@ -1,149 +1,200 @@
-// Want to do Runge Kuta
+#include <iostream>
 #include <fstream>
 #include <complex>
 #include <vector>
 #include <string>
-using namespace std;
+#include <sstream>
+#include <stdexcept>
+#include <cmath>
 
-double x_range =  20;
-double dx = 0.1;
-double dt = 0.08 * dx*dx; //RK condition, maybe can be more precise
-int domain_size = 2*x_range/dx;
-double t_max = 5;
-double g = 0.01; //g>1 is repulsive here
-double exponent = 2.;
-double epsilon = 10*dx;
-auto L = 3.; //half length of initial profile step
-double amplitude = 1.0;
-double exterior = 0.3;
-double c = 1.;
-double a =1;
+using namespace std;
 
 const complex<double> I(0.0, 1.0);
 
-auto IdxToCoord(int idx){
-	return -x_range + idx*dx;
-}
-auto SolitonId(double x, double L, double eps){
-	return 1./cosh(x);
-}
-auto StepDensityC2(double x, double L, double eps){
-    double absx = std::abs(x);
+// Class to store simulation and initial data parameters
+class Config {
+    // Simulation Parameters
+public:
+    double x_range;
+    double dx;
+    double dt;
+    double smoothing;
+    int domain_size;
+    double t_max;
+    double g;
+    double exponent;
 
-    if (absx >= L + eps) {
-        return exterior;
-    } else if (absx <= L - eps) {
-        return amplitude;
-    } else {
-        double z = (L + eps - absx) / (2.0 * eps);  //map to [0,1]
-        return exterior+amplitude*(6*z*z*z*z*z - 15*z*z*z*z + 10*z*z*z); // This function gives a C2 transition
+    // Initial Data Parameters
+    double L;
+    double amplitude;
+    double exterior_density;
+    double c;
+
+    Config(){
     }
+
+    Config(std::string filename) {
+        std::ifstream in(filename);
+        if (!in) {
+            throw std::runtime_error("Could not open config file: " + filename);
+        }
+
+        std::string line;
+        while (std::getline(in, line)) {
+            // Remove leading and trailing whitespaces
+            std::stringstream ss(line);
+            std::string key;
+            double value;
+
+            // Skip comments or empty lines
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+
+            // Read the key-value pair
+            if (ss >> key >> value) {
+                if (key == "x_range") x_range = value;
+                else if (key == "dx") dx = value;
+                else if (key == "dt") dt = value;
+                else if (key == "domain_size") domain_size = static_cast<int>(value);
+                else if (key == "t_max") t_max = value;
+                else if (key == "g") g = value;
+                else if (key == "exponent") exponent = value;
+                else if (key == "smoothing") smoothing = value;
+                else if (key == "L") L = value;
+                else if (key == "amplitude") amplitude = value;
+                else if (key == "exterior_density") exterior_density = value;
+                else if (key == "c") c = value;
+                else {
+                    std::cerr << "Warning: Unknown config key '" << key << "'\n";
+                }
+            }
+        }
+
+        // Derived values
+        domain_size = static_cast<int>(2 * x_range / dx);
+    }
+};
+
+// Helper functions
+auto IdxToCoord(const Config& config, int idx) {
+    return -config.x_range + idx * config.dx;
 }
 
-auto StepDensity(double x, double L, double eps){
-    double absx = std::abs(x);
+auto SolitonId(const Config& config, double x) {
+    return 1. / cosh(x);
+}
 
-    if (absx >= L + eps) {
-        return exterior;
-    } else if (absx <= L - eps) {
-        return amplitude + exterior;
+auto StepDensity(const Config& config, double x) {
+    double absx = std::abs(x);
+    double eps = config.dx * config.smoothing;
+    if (absx >= config.L + eps) {
+        return config.exterior_density;
+    } else if (absx <= config.L - eps) {
+        return config.amplitude + config.exterior_density;
     } else {
         // Corrected z to map linearly from L+eps to L-eps
-        double z = (L + eps - absx) / (2.0 * eps);  // z goes from 0 at L+eps to 1 at L-eps
+        double z = (config.L + eps - absx) / (2.0 * eps);  // z goes from 0 at L+eps to 1 at L-eps
         // Smooth tanh transition between L-eps and L+eps
-        return exterior + (amplitude) * 0.5 * (1 + tanh(10 * (z - 0.5)));  // Smooth transition
+        return config.exterior_density + (config.amplitude) * 0.5 * (1 + tanh(10 * (z - 0.5)));  // Smooth transition
     }
 }
 
-
-auto StepPhase(double x, double L, double eps){
+auto StepPhase(const Config& config, double x) {
     double absx = std::abs(x);
-    
-    if (absx <= L - eps) {
+    double eps = config.smoothing * config.dx;
+
+    if (absx <= config.L - eps) {
         return 0.0;
-    } else if (absx >= L + eps) {
-        return c * (absx - (L + eps));
+    } else if (absx >= config.L + eps) {
+        return config.c * (absx - (config.L + eps));
     } else {
-        // In the smoothing zone: [L - eps, L + eps]
-        // z goes from 0 to 1
-        double z = (absx - (L - eps)) / (2 * eps);
-        double smooth = z * z * (3 - 2 * z); // C¹ smoothstep (Hermite polynomial)
-        return c * smooth * (absx - (L + eps));
+        // Arctangent smoothing in transition region
+        double z = (absx - (config.L - eps)) / (2 * eps);  // z ∈ [0, 1]
+        double smooth = (1.0 / M_PI) * atan(10 * (z - 0.5)) + 0.5;  // Smoothstep from 0 to 1
+        return config.c * smooth * (absx - (config.L + eps));
     }
 }
-auto toComplex(double density, double phase){
-	return pow(density, 0.5) * exp(I*phase);
-}
-auto InitialData(){
-	auto id = vector<complex<double>>{};
-	for(int i =0; i< domain_size; i++){
-		auto x = IdxToCoord(i);
-		auto density = StepDensity(x, L, epsilon);
-		auto phase = StepPhase(x, L, epsilon);
-		id.emplace_back(toComplex(density, phase));
-	}
-	return id;
-}
-auto DoubleDeriv(vector<complex<double>>& psi){
-	auto gradient = vector<complex<double>>{};
-	for(int i=0; i<domain_size; i++){
-		if(i ==0||(i+1 == domain_size)){
-			gradient.emplace_back(0);
-		}
-		else{
-			auto term = (psi[i-1]- complex<double>(2) * psi[i]+ psi[i+1]) / pow(complex<double>(dx), 2);
-			gradient.emplace_back(term);
-		}
-	}
-	return gradient;
+
+auto toComplex(double sq_density, double phase) {
+    return  sq_density * exp(I * phase);
 }
 
-auto linear_comb(vector<complex<double>>& v_1, vector<complex<double>>& v_2, complex<double> coefficient){
-	auto sum = vector<complex<double>>{};
-	for(int i = 0; i < domain_size; i++){
-		auto added = v_1[i] + coefficient * v_2[i];
-		sum.emplace_back(added);
-	}
-	return sum;
+auto InitialData(const Config& config) {
+    auto id = vector<complex<double>>{};
+    for (int i = 0; i < config.domain_size; i++) {
+        auto x = IdxToCoord(config, i);
+        auto density = StepDensity(config, x);
+        auto phase = StepPhase(config, x);
+        id.emplace_back(toComplex(density, phase));
+    }
+    return id;
 }
 
-auto F(vector<complex<double>> psi){
-	auto result = vector<complex<double>>{};
-	auto gradient = DoubleDeriv(psi);
-	for(int i = 0; i < domain_size; i++){
-		auto power = 2. * (exponent - double(1.));
-		auto term_1 =  -a*gradient[i] + g*psi[i]*pow(abs(psi[i]),power);
-		auto final_t = (1./I) * term_1;
-		result.emplace_back(final_t);
-	}
-	return result;
+auto DoubleDeriv(const Config& config, const vector<complex<double>>& psi) {
+    auto gradient = vector<complex<double>>(config.domain_size);
+
+    for (int i = 0; i < config.domain_size; i++) {
+        int left  = (i - 1 + config.domain_size) % config.domain_size;
+        int right = (i + 1) % config.domain_size;
+
+        gradient[i] = (psi[left] - complex<double>(2.0) * psi[i] + psi[right]) 
+                      / (config.dx * config.dx);
+    }
+
+    return gradient;
 }
 
-class Psi{
-	double time;
-	vector<complex<double>> data;
-	public: 
-	
-	Psi(){
-		time = 0.;
-		data = InitialData();
-	}
-	void EvolveRK(){
-		auto k_1 = F(data);
-		auto k_2 = F(linear_comb(data, k_1, dt/2.));
-		auto k_3 = F(linear_comb(data, k_2, dt/2.));
-		auto k_4 = F(linear_comb(data, k_3, dt));
-		auto evolved = vector<complex<double>>{};
+auto linear_comb(const vector<complex<double>>& v_1, const vector<complex<double>>& v_2, complex<double> coefficient) {
+    auto sum = vector<complex<double>>{};
+    for (int i = 0; i < v_1.size(); i++) {
+        auto added = v_1[i] + coefficient * v_2[i];
+        sum.emplace_back(added);
+    }
+    return sum;
+}
 
-		for(int i = 0; i < domain_size; i++){
-			auto evolved_i = data[i] + dt/6. * (k_1[i] + 2.*k_2[i]+ 2.*k_3[i]+k_4[i]);
-			evolved.emplace_back(evolved_i);
-		}
-		data = evolved;
-		time = time+dt;
-	}
+auto F(const Config& config, const vector<complex<double>>& psi) {
+    auto result = vector<complex<double>>{};
+    auto gradient = DoubleDeriv(config, psi);
+    for (int i = 0; i < config.domain_size; i++) {
+        auto absval = std::norm(psi[i]);
+        auto term_1 = 0.5 * gradient[i] - config.g * psi[i] * std::pow(absval, config.exponent - 1.);
+        auto final_t = I * term_1;
+        result.emplace_back(final_t);
+    }
+    return result;
+}
 
-	void Write(const std::string& filename) const {
+// Psi class for evolving the state using Runge-Kutta
+class Psi {
+    double time;
+    vector<complex<double>> data;
+    Config config;
+
+public:
+    Psi(Config config_) {
+        time = 0.;
+        config = config_;
+        data = InitialData(config_);
+    }
+
+    void EvolveRK() {
+        auto k_1 = F(config, data);
+        auto k_2 = F(config, linear_comb(data, k_1, config.dt / 2.));
+        auto k_3 = F(config, linear_comb(data, k_2, config.dt / 2.));
+        auto k_4 = F(config, linear_comb(data, k_3, config.dt));
+        auto evolved = vector<complex<double>>{};
+
+        for (int i = 0; i < config.domain_size; i++) {
+            auto evolved_i = data[i] + config.dt / 6. * (k_1[i] + 2. * k_2[i] + 2. * k_3[i] + k_4[i]);
+            evolved.emplace_back(evolved_i);
+        }
+        data = evolved;
+        time = time + config.dt;
+    }
+
+    void Write(const std::string& filename) const {
         std::ofstream out(filename, std::ios::app);  // append mode
         if (!out) {
             throw std::runtime_error("Could not open file: " + filename);
@@ -157,14 +208,24 @@ class Psi{
     }
 };
 
-int main(){
-	string filename = "evolution.csv";
-	auto timesteps = t_max/dt;
-	auto state = Psi();
+// Main function to run the simulation
+int main() {
+    string filename = "evolution.csv";
 
-	for(int t = 0; t < timesteps; t++){
-		state.Write(filename);
-		state.EvolveRK();
-	}
-	return 0;
+    // Load configuration from the file
+    Config config("config.txt");
+    
+    // Calculate timesteps
+    auto timesteps = static_cast<int>(config.t_max / config.dt);
+    auto state = Psi(config);
+    auto step = int(timesteps/10);
+    // Evolve system and save data to file
+    for (int t = 0; t < timesteps; t++) {
+	if(t%step == 0){cout << "Step " << t << " out of " << timesteps << "\n";}
+        state.Write(filename);
+        state.EvolveRK();
+    }
+
+    return 0;
 }
+

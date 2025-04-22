@@ -13,4 +13,4 @@ clean:
 	rm -f $(TARGET) $(CSV)
 
 run: 
-	make clean && make all && ./NLS_sim && python3 plotter.py
+	rm -rf $(CSV) && ./NLS_sim && python3 plotter.py

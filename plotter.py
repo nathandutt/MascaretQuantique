@@ -2,11 +2,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 
-# Parameters for x axis
-x_range = 20
-dx = 0.1  # dx used in your C++ code
+# Function to read the configuration file and extract parameters
+def read_config(filename):
+    config = {}
+    with open(filename, 'r') as file:
+        for line in file:
+            # Remove leading/trailing whitespace and skip empty lines or comments
+            line = line.strip()
+            if line.startswith('#') or not line:
+                continue
+            # Try to split the line into key and value
+            parts = line.split()
+            if len(parts) == 2:  # Make sure we have exactly two parts (key, value)
+                key, value = parts
+                try:
+                    config[key] = float(value)
+                except ValueError:
+                    print(f"Warning: Skipping invalid line (non-numeric value) in config: {line}")
+            else:
+                print(f"Warning: Skipping invalid line (expected key-value pair) in config: {line}")
+    return config
+
+
+# Read parameters from the config file
+config = read_config('config.txt')
+
+# Parameters from config
+x_range = config.get('x_range', 20)
+dx = config.get('dx', 0.1)
 x = np.arange(-x_range, x_range, dx)
-x=x[:int(2*x_range/dx)]
+x = x[:int(2 * x_range / dx)]
 
 # Read data from CSV (skip 99 out of 100)
 filename = "evolution.csv"
@@ -39,3 +64,4 @@ with open(filename, newline='') as csvfile:
         plt.waitforbuttonpress()
 
 plt.show()
+

@@ -1,0 +1,23 @@
+# -------------------------------
+# Simulation Parameters
+# -------------------------------
+x_range 30
+dx 0.1
+dt 0.001                # Typically 0.08 * dx^2 for RK stability
+t_max 3
+
+# Nonlinearity Parameters
+g 25                   # Interaction strength (g > 0 is repulsive)
+exponent 1.66666666             # Nonlinearity exponent
+
+# -------------------------------
+# Initial Condition Parameters
+# -------------------------------
+L 2                    # Half-width of the initial density step
+amplitude 0.8            # Amplitude of initial density
+exterior_density 0.2     # Background density
+c 0.0                    # Phase slope outside the step
+
+# Smoothing
+smoothing 5             # epsilon = smoothing * dx
+
