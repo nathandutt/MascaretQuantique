@@ -1,4 +1,4 @@
-#include <iostream>
+
 #include <fstream>
 #include <complex>
 #include <vector>
@@ -6,6 +6,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <cmath>
+
+#include <iostream>
 
 using namespace std;
 
@@ -22,6 +24,7 @@ public:
     double t_max;
     double g;
     double exponent;
+    double save_every;
 
     // Initial Data Parameters
     double L;
@@ -64,6 +67,8 @@ public:
                 else if (key == "amplitude") amplitude = value;
                 else if (key == "exterior_density") exterior_density = value;
                 else if (key == "c") c = value;
+                else if (key == "save_every") save_every = value;
+
                 else {
                     std::cerr << "Warning: Unknown config key '" << key << "'\n";
                 }
@@ -84,47 +89,27 @@ auto SolitonId(const Config& config, double x) {
     return pow(1. / cosh(x), 2);
 }
 
-auto StepDensity(const Config& config, double x) {
-    double absx = std::abs(x);
-    double eps = config.dx * config.smoothing;
-    if (absx >= config.L + eps) {
-        return config.exterior_density;
-    } else if (absx <= config.L - eps) {
-        return config.amplitude + config.exterior_density;
-    } else {
-        // Corrected z to map linearly from L+eps to L-eps
-        double z = (config.L + eps - absx) / (2.0 * eps);  // z goes from 0 at L+eps to 1 at L-eps
-        // Smooth tanh transition between L-eps and L+eps
-        return config.exterior_density + (config.amplitude) * 0.5 * (1 + tanh(10 * (z - 0.5)));  // Smooth transition
-    }
+auto SlabDensity(const Config& config, double x){
+    auto alpha = 1./(config.smoothing*config.dx); 
+    return config.exterior_density + (config.amplitude - config.exterior_density) * 0.5 * ( std::tanh(alpha * (x + config.L))
+                 - std::tanh(alpha * (x - config.L)) );
 }
 
-auto StepPhase(const Config& config, double x) {
-    double absx = std::abs(x);
-    double eps = config.smoothing * config.dx;
-
-    if (absx <= config.L - eps) {
-        return 0.0;
-    } else if (absx >= config.L + eps) {
-        return config.c * (absx - (config.L + eps));
-    } else {
-        // Arctangent smoothing in transition region
-        double z = (absx - (config.L - eps)) / (2 * eps);  // z ∈ [0, 1]
-        double smooth = (1.0 / M_PI) * atan(10 * (z - 0.5)) + 0.5;  // Smoothstep from 0 to 1
-        return config.c * smooth * (absx - (config.L + eps));
-    }
-}
-
+auto StepDensity(const Config& config, double x){
+    return 0.5 + 0.5*( std::tanh((1./(config.smoothing*config.dx)) * (x + config.L)));}
+                 
 auto toComplex(double density, double phase) {
-    return  pow(density, 0.5) * exp(I * phase);
+   // return  pow(density, 0.5) * exp(I * phase);i
+   return  complex(pow(density, 0.5));
+
 }
 
 auto InitialData(const Config& config) {
     auto id = vector<complex<double>>{};
     for (int i = 0; i < config.domain_size; i++) {
         auto x = IdxToCoord(config, i);
-        auto density = StepDensity(config, x);
-        auto phase = StepPhase(config, x);
+        auto density = SlabDensity(config, x);
+        auto phase = 0.;
         id.emplace_back(toComplex(density, phase));
     }
     return id;
@@ -134,10 +119,11 @@ auto DoubleDeriv(const Config& config, const vector<complex<double>>& psi) {
     auto gradient = vector<complex<double>>(config.domain_size);
 
     for (int i = 0; i < config.domain_size; i++) {
-        int left  = (i - 1 + config.domain_size) % config.domain_size;
-        int right = (i + 1) % config.domain_size;
-
-        gradient[i] = (psi[left] - complex<double>(2.0) * psi[i] + psi[right]) 
+        if(i==0 || i == config.domain_size -1){
+            gradient.emplace_back(0.);
+            continue;
+        }
+        gradient[i] = (psi[i-1] - complex<double>(2.0) * psi[i] + psi[i+1]) 
                       / (config.dx * config.dx);
     }
 
@@ -165,11 +151,38 @@ auto F(const Config& config, const vector<complex<double>>& psi) {
     return result;
 }
 
+auto GetCurrent(const Config& config,
+                const std::vector<std::complex<double>>& psi)
+{
+    const int N   = config.domain_size;
+    const double dx = config.dx;
+
+    std::vector<double> j(N);
+
+    // Bulk points: central difference for ∂ψ/∂x
+    for(int i = 1; i < N-1; ++i) {
+        std::complex<double> grad = (psi[i+1] - psi[i-1]) / (2.0 * dx);
+        j[i] = std::imag(std::conj(psi[i]) * grad);
+    }
+
+    // Boundaries: one‐sided difference
+    {
+        auto grad0 = (psi[1]   - psi[0])   / dx;
+        j[0]      = std::imag(std::conj(psi[0]) * grad0);
+
+        auto gradN = (psi[N-1] - psi[N-2]) / dx;
+        j[N-1]    = std::imag(std::conj(psi[N-1]) * gradN);
+    }
+
+    return j;
+}
+
 // Psi class for evolving the state using Runge-Kutta
 class Psi {
     double time;
     vector<complex<double>> data;
     Config config;
+    vector<double> phase_gradient;
 
 public:
     Psi(Config config_) {
@@ -193,6 +206,24 @@ public:
         time = time + config.dt;
     }
 
+    void GetPhaseGradient(){
+       auto current = GetCurrent(config, data);
+       auto u = vector<double>{};
+       for(int i = 0; i<config.domain_size; i++){
+           if(abs(data[i]) < pow(10.,-3)){
+                   u.emplace_back(0.);
+                   continue;
+
+            }
+            
+            auto velocity = current[i]/norm(data[i]);
+            u.emplace_back(velocity);
+       }
+       phase_gradient = u;
+    }
+
+
+
     void Write(const std::string& filename) const {
         std::ofstream out(filename, std::ios::app);  // append mode
         if (!out) {
@@ -204,6 +235,11 @@ public:
             out << "," << c.real() << "," << c.imag();
         }
         out << "\n";
+        out << time;
+        for (const auto& c : phase_gradient){
+            out << "," << c;
+        }
+        out << "\n";
     }
 };
 
@@ -213,7 +249,7 @@ int main() {
 
     // Load configuration from the file
     Config config("config.txt");
-    auto step = static_cast<int>(0.1/config.dt);
+    auto step = static_cast<int>(config.save_every/config.dt);
     // Calculate timesteps
     auto timesteps = static_cast<int>(config.t_max / config.dt);
     auto state = Psi(config);
@@ -221,6 +257,7 @@ int main() {
     for (int t = 0; t < timesteps; t++) {
         if(t%step == 0){
 	cout << "t = " << config.dt*t << "\n";
+    state.GetPhaseGradient();
 	state.Write(filename);
 	}
 	state.EvolveRK();
