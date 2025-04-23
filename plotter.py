@@ -35,7 +35,7 @@ x = x[:int(2 * x_range / dx)]
 
 # Read data from CSV (skip 99 out of 100)
 filename = "evolution.csv"
-stride = 25
+stride = 1
 
 # Prepare plot
 fig, ax = plt.subplots()

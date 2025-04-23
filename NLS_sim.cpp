@@ -10,7 +10,6 @@
 using namespace std;
 
 const complex<double> I(0.0, 1.0);
-
 // Class to store simulation and initial data parameters
 class Config {
     // Simulation Parameters
@@ -82,7 +81,7 @@ auto IdxToCoord(const Config& config, int idx) {
 }
 
 auto SolitonId(const Config& config, double x) {
-    return 1. / cosh(x);
+    return pow(1. / cosh(x), 2);
 }
 
 auto StepDensity(const Config& config, double x) {
@@ -116,8 +115,8 @@ auto StepPhase(const Config& config, double x) {
     }
 }
 
-auto toComplex(double sq_density, double phase) {
-    return  sq_density * exp(I * phase);
+auto toComplex(double density, double phase) {
+    return  pow(density, 0.5) * exp(I * phase);
 }
 
 auto InitialData(const Config& config) {
@@ -214,16 +213,17 @@ int main() {
 
     // Load configuration from the file
     Config config("config.txt");
-    
+    auto step = static_cast<int>(0.1/config.dt);
     // Calculate timesteps
     auto timesteps = static_cast<int>(config.t_max / config.dt);
     auto state = Psi(config);
-    auto step = int(timesteps/10);
     // Evolve system and save data to file
     for (int t = 0; t < timesteps; t++) {
-	if(t%step == 0){cout << "Step " << t << " out of " << timesteps << "\n";}
-        state.Write(filename);
-        state.EvolveRK();
+        if(t%step == 0){
+	cout << "t = " << config.dt*t << "\n";
+	state.Write(filename);
+	}
+	state.EvolveRK();
     }
 
     return 0;
