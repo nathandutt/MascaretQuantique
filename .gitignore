@@ -1,0 +1,5 @@
+__pycache__/
+NLS_sim
+evolution.csv
+.vscode/
+.clang_complete

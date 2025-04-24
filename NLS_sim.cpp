@@ -6,7 +6,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <cmath>
-
 #include <iostream>
 
 using namespace std;
@@ -96,21 +95,56 @@ auto SlabDensity(const Config& config, double x){
 }
 
 auto StepDensity(const Config& config, double x){
-    return 0.5 + 0.5*( std::tanh((1./(config.smoothing*config.dx)) * (x + config.L)));}
-                 
-auto toComplex(double density, double phase) {
-   // return  pow(density, 0.5) * exp(I * phase);i
-   return  complex(pow(density, 0.5));
+    return config.amplitude * (0.5 - 0.5*( std::tanh((1./(config.smoothing*config.dx)) * (x - config.L))));}
 
+auto Integrate(const Config& config, vector<double> u){
+    auto phase = vector<double>{};
+    double sum = 0.;
+    for(int i = 0; i < config.domain_size ; i++){
+        sum = sum + u[i] * config.dx;
+        phase.emplace_back(sum);
+        cout << sum << "\n";
+    }
+    cout << phase[10] << " " << phase[11] << "\n";
+    return phase;
 }
 
+
+auto toComplex(double density, double phase) {
+   // return  pow(density, 0.5) * exp(I * phase);i
+   return exp(I * phase) * pow(density, 0.5);
+}
+
+auto InitialDensity(const Config& config){
+    auto density = vector<double>{};
+    for(int i =0; i<config.domain_size; i++){
+        auto x = IdxToCoord(config, i);
+        //auto dens = SlabDensity(config, x);
+        auto dens = 1.0;
+        density.emplace_back(dens);
+    } 
+    return density;
+}
+
+auto InitialPhases(const Config& config){
+    auto u = vector<double>{};
+    for(int i =0; i<config.domain_size; i++){
+        auto x = IdxToCoord(config, i);
+        auto u_i = StepDensity(config, x);
+        u.emplace_back(u_i);
+    } 
+
+    return Integrate(config, u);
+}
+
+
 auto InitialData(const Config& config) {
+    auto density = InitialDensity(config);
+    auto phases = InitialPhases(config);
     auto id = vector<complex<double>>{};
     for (int i = 0; i < config.domain_size; i++) {
         auto x = IdxToCoord(config, i);
-        auto density = SlabDensity(config, x);
-        auto phase = 0.;
-        id.emplace_back(toComplex(density, phase));
+        id.emplace_back(toComplex(density[i], phases[i]));
     }
     return id;
 }
@@ -176,6 +210,10 @@ auto GetCurrent(const Config& config,
 
     return j;
 }
+
+
+
+
 
 // Psi class for evolving the state using Runge-Kutta
 class Psi {

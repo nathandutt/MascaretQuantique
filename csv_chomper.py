@@ -1,5 +1,6 @@
 import numpy as np
 import csv
+from math import sqrt
 
 def read_csv_fields(filename):
     """
@@ -41,7 +42,7 @@ def read_csv_fields(filename):
 
 
 def c(rho, gamma):
-    return rho**((gamma-1)/2)
+    return sqrt(gamma-1)*rho**((gamma-1)/2)
 
 def lambda_plus(rho, u, gamma):
     return u + 2/(gamma-1) * c(rho, gamma)
@@ -51,13 +52,13 @@ def lambda_minus(rho, u, gamma):
 
 #supposes that the bulk density is one (so speed of sound is 1)
 def lambda_zero(gamma):
-    return 2.0/(gamma -1.0)
+    return 2.0/(gamma -1.0) * c(1., gamma)
 
 def lambda_moins_theo(L, gamma, t, x):
-    if t>L:
-        return 0.0
-    x_moins = L - t + 10e-6
+    
+    x_moins = L - c(1., gamma)*t + 10e-6
     x_plus = L + lambda_zero(gamma)*t - 10e-6 #just so we have no singularities
+    if x_moins < 0: return 0.0
     if x < 0:
         return -lambda_zero(gamma)
     if x > 0:
@@ -69,10 +70,9 @@ def lambda_moins_theo(L, gamma, t, x):
             return 2*lambda_zero(gamma)/(x_plus - x_moins) * (x-(x_plus + x_moins)/2)
 
 def lambda_plus_theo(L, gamma, t, x):
-    if t>L:
-        return 0.0
-    x_plus = -L + t
+    x_plus = -L + c(1., gamma) * t
     x_moins = -L - lambda_zero(gamma)*t
+    if x_plus > 0: return 0.0
 
     if x > 0: return lambda_zero(gamma)
 
@@ -89,7 +89,7 @@ def lambda_plus_theo(L, gamma, t, x):
 def lambda_to_urho(gamma, lambda_plus, lambda_moins):
     u = 1/2 * (lambda_plus + lambda_moins)
     c = (gamma - 1)/4 * (lambda_plus - lambda_moins)
-    rho = c**(2/(gamma-1))
+    rho = (1/sqrt(gamma-1.) * c)**(2/(gamma-1))
     return rho, u
 
 
