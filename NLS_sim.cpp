@@ -95,7 +95,17 @@ auto SlabDensity(const Config& config, double x){
 }
 
 auto StepDensity(const Config& config, double x){
-    return config.amplitude * (0.5 - 0.5*( std::tanh((1./(config.smoothing*config.dx)) * (x - config.L))));}
+    return config.amplitude * (0.5 - 0.5*( std::tanh((1./(config.smoothing*config.dx)) * (x))));}
+
+auto ULorentzian(const Config& config, double x){
+    return config.amplitude * (pow(config.L*2., 2.))/(pow(x, 2) + pow(config.L*2., 2)) + config.exterior_density;
+
+}
+
+auto rhoLorentzian(const Config& config, double x){
+    return   1. - 0.9*(pow(config.L*10, 2.))/(pow(x, 2) + pow(config.L*10, 2));
+
+}
 
 auto Integrate(const Config& config, vector<double> u){
     auto phase = vector<double>{};
@@ -120,7 +130,7 @@ auto InitialDensity(const Config& config){
     for(int i =0; i<config.domain_size; i++){
         auto x = IdxToCoord(config, i);
         //auto dens = SlabDensity(config, x);
-        auto dens = 1.0;
+        auto dens = config.exterior_density * (1./ULorentzian(config, x));
         density.emplace_back(dens);
     } 
     return density;
@@ -130,7 +140,7 @@ auto InitialPhases(const Config& config){
     auto u = vector<double>{};
     for(int i =0; i<config.domain_size; i++){
         auto x = IdxToCoord(config, i);
-        auto u_i = StepDensity(config, x);
+        auto u_i = ULorentzian(config, x);
         u.emplace_back(u_i);
     } 
 
@@ -158,6 +168,20 @@ auto DoubleDeriv(const Config& config, const vector<complex<double>>& psi) {
             continue;
         }
         gradient[i] = (psi[i-1] - complex<double>(2.0) * psi[i] + psi[i+1]) 
+                      / (config.dx * config.dx);
+    }
+
+    return gradient;
+}
+
+auto DoubleDerivPeriodic(const Config& config, const vector<complex<double>>& psi) {
+    auto gradient = vector<complex<double>>(config.domain_size);
+
+    for (int i = 0; i < config.domain_size; i++) {
+        int n = config.domain_size;
+        int wrapped_minus = (((i-1) % n) + n) % n;
+        int wrapped_plus = (((i+1) % n) + n) % n;
+        gradient[i] = (psi[wrapped_minus] - complex<double>(2.0) * psi[i] + psi[wrapped_plus]) 
                       / (config.dx * config.dx);
     }
 
@@ -248,7 +272,7 @@ public:
        auto current = GetCurrent(config, data);
        auto u = vector<double>{};
        for(int i = 0; i<config.domain_size; i++){
-           if(abs(data[i]) < pow(10.,-3)){
+           if(abs(data[i]) < pow(10.,-2)){
                    u.emplace_back(0.);
                    continue;
 
