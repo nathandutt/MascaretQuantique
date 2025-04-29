@@ -3,8 +3,7 @@ import matplotlib.pyplot as plt
 import csv
 import argparse
 from matplotlib.animation import FuncAnimation, FFMpegWriter
-from csv_chomper import lambda_plus, lambda_minus
-
+from csv_chomper import lambda_plus, lambda_minus, lambda_plus_theo, lambda_moins_theo, lambda_to_urho
 def read_config(filename):
     config = {}
     with open(filename, 'r') as file:
@@ -34,9 +33,17 @@ config = read_config('config.txt')
 x_range = config.get('x_range', 20)
 dx      = config.get('dx',    0.1)
 gamma   = config.get('exponent', 2.0)  # required for lambda±
+L = config.get('L', 20.0)
 
 x = np.arange(-x_range, x_range, dx)
 x = x[:int(2 * x_range / dx)]
+
+def rho_theoretical(x, t):
+    lambda_plus_val = lambda_plus_theo(L, gamma, t, x)
+    lambda_moins_val = lambda_moins_theo(L, gamma, t, x)
+
+    r, u = lambda_to_urho(gamma, lambda_plus_val, lambda_moins_val)
+    return r
 
 # --- Load all data first ---
 filename = "evolution.csv"
@@ -63,13 +70,15 @@ for i in range(0, len(rows) - 1, 2):  # every pair of lines is a frame
     else:
         y1 = rho
         y2 = u
-
-    frames.append((time, y1, y2))
+    y3 = rho_theoretical(x, time)
+    frames.append((time, y1, y2, y3))
 
 # --- Set up figure ---
 fig, ax = plt.subplots()
-line1, = ax.plot(x, np.zeros_like(x), label='|ψ|²' if not args.use_lambda else 'λ⁺')
-line2, = ax.plot(x, np.zeros_like(x), label='u'     if not args.use_lambda else 'λ⁻', linestyle='--')
+line1, = ax.plot(x, np.zeros_like(x), label='|ψ|²' if not args.use_lambda else 'λ⁺', linewidth=2.0, antialiased=True)
+line2, = ax.plot(x, np.zeros_like(x), label='u'     if not args.use_lambda else 'λ⁻', linestyle='--', linewidth=2.0, antialiased=True)
+line3, = ax.plot(x, np.zeros_like(x), label='ρ_theoretical', linewidth=2.0, linestyle=':', color='gray', antialiased=True)
+
 time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
 
 ax.set_xlim(x[0], x[-1])
@@ -80,17 +89,19 @@ ax.legend()
 
 # --- Animation update function ---
 def update(frame):
-    time, y1, y2 = frame
+    time, y1, y2, y3 = frame
     line1.set_ydata(y1)
     line2.set_ydata(y2)
+    line3.set_ydata(0)
     time_text.set_text(f'time = {time:.2f}')
-    return line1, line2, time_text
+    if time < 105 and time > 102: fig.savefig("test_frame.png", dpi=1000)
+    return line1, line2, line3, time_text
 
 # --- Create animation ---
 ani = FuncAnimation(fig, update, frames=frames, blit=True)
 
 # --- Save to video ---
-writer = FFMpegWriter(fps=10, bitrate=1800)
-ani.save(args.out, writer=writer)
+writer = FFMpegWriter(fps=10, bitrate=5000)
+ani.save(args.out, writer=writer,dpi=300)
 print(f"Saved animation to {args.out}")
 

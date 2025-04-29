@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 import argparse
-from csv_chomper import lambda_plus, lambda_minus
+from csv_chomper import lambda_plus, lambda_minus, lambda_plus_theo, lambda_moins_theo, lambda_to_urho
 
 def read_config(filename):
     config = {}
@@ -31,6 +31,7 @@ config = read_config('config.txt')
 x_range = config.get('x_range', 20)
 dx      = config.get('dx',    0.1)
 gamma   = config.get('exponent', 2.0)  # required for lambda±
+L = config.get('L', 10.0)
 
 x = np.arange(-x_range, x_range, dx)
 x = x[:int(2 * x_range / dx)]
@@ -41,6 +42,8 @@ stride   = 1
 fig, ax = plt.subplots()
 line1, = ax.plot(x, np.zeros_like(x), label='|ψ|²' if not args.use_lambda else 'λ⁺')
 line2, = ax.plot(x, np.zeros_like(x), label='u'     if not args.use_lambda else 'λ⁻', linestyle='--')
+#line3, = ax.plot(x, np.zeros_like(x), label='rho_theoretical', linewidth = 1.0, color = 'blue')
+
 time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
 
 ax.set_xlim(x[0], x[-1])
@@ -48,6 +51,14 @@ ax.set_ylim(-3, 3)  # Fixed for consistent scale
 ax.set_xlabel('x')
 ax.set_ylabel('Field values')
 ax.legend()
+
+# Define rho_theoretical function
+def rho_theoretical(x, t):
+    lambda_plus_val = lambda_plus_theo(L, gamma, t, x)
+    lambda_moins_val = lambda_moins_theo(L, gamma, t, x)
+
+    r, u = lambda_to_urho(gamma, lambda_plus_val, lambda_moins_val)
+    return r
 
 with open(filename, newline='') as csvfile:
     reader   = csv.reader(csvfile)
@@ -70,6 +81,7 @@ with open(filename, newline='') as csvfile:
         time = row[0]
         real = row[1::2]
         imag = row[2::2]
+
         rho = np.array(real)**2 + np.array(imag)**2
 
         row2 = [float(v) for v in row2]
@@ -81,7 +93,10 @@ with open(filename, newline='') as csvfile:
         else:
             y1 = rho
             y2 = u
-
+        
+        # Update line3 with rho_theoretical
+        #y3 = rho_theoretical(x, time)
+        #line3.set_ydata(y3)
         line1.set_ydata(y1)
         line2.set_ydata(y2)
         time_text.set_text(f'time = {time:.2f}')

@@ -1,7 +1,7 @@
 # -------------------------------
 # Simulation Parameters
 # -------------------------------
-x_range 750
+x_range 500
 dx 0.2
 dt 0.01  #small in front of dx^2              
 t_max 300
@@ -9,18 +9,18 @@ save_every 2
 
 # Nonlinearity Parameters
 g 1                  # Interaction strength (g > 0 is repulsive)
-exponent 5          # gamma
+exponent 2          # gamma
 
 # -------------------------------
 # Initial Condition Parameters
 # -------------------------------
-L 50                   # Half-width of the initial density step
-amplitude 2.0          # Amplitude of initial density
+L 20                   # Half-width of the initial density step
+amplitude 1.4           # Amplitude of initial density
 exterior_density 0.0    # Background density
 c 0                    # initial speed of matter outside step
-rho_min 0.2
-rho_L 40.0
+rho_min 0.4
+rho_L 80.0
 
 # Smoothing
-smoothing 20             # epsilon = smoothing * dx
+smoothing 10             # epsilon = smoothing * dx
 

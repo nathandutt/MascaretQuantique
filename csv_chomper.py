@@ -54,37 +54,48 @@ def lambda_minus(rho, u, gamma):
 def lambda_zero(gamma):
     return 2.0/(gamma -1.0) * c(1., gamma)
 
+import numpy as np
 def lambda_moins_theo(L, gamma, t, x):
-    
-    x_moins = L - c(1., gamma)*t + 10e-6
-    x_plus = L + lambda_zero(gamma)*t - 10e-6 #just so we have no singularities
-    if x_moins < 0: return 0.0
-    if x < 0:
-        return -lambda_zero(gamma)
-    if x > 0:
-        if x > x_plus:
-            return lambda_zero(gamma)
-        if x < x_moins:
-            return -lambda_zero(gamma)
-        else:
-            return 2*lambda_zero(gamma)/(x_plus - x_moins) * (x-(x_plus + x_moins)/2)
+    l_0 = lambda_zero(gamma)
+    x_moins = L - c(1., gamma) * t - 1e-5
+    x_plus  = L + l_0 * t + 1e-5  # Avoid edge-case singularities
+
+    # Linear interpolation formula:
+    slope = 2 * l_0 / (x_plus - x_moins)
+    midpoint = (x_plus + x_moins) / 2
+    linear_interp = slope * (x - midpoint)
+
+    result = np.where(
+        x < x_moins,
+        -l_0,
+        np.where(
+            x > x_plus,
+            l_0,
+            linear_interp
+        )
+    )
+    return result
 
 def lambda_plus_theo(L, gamma, t, x):
-    x_plus = -L + c(1., gamma) * t
-    x_moins = -L - lambda_zero(gamma)*t
-    if x_plus > 0: return 0.0
+    l_0 = lambda_zero(gamma)
+    x_plus = -L + c(1., gamma) * t + 1e-5
+    x_moins = -L - lambda_zero(gamma) * t - 1e-5
+    t_coll = L/c(1., gamma)
+  # Linear interpolation formula:
+    slope = 2 * l_0 / (x_plus - x_moins)
+    midpoint = (x_plus + x_moins) / 2
+    linear_interp = slope * (x - midpoint)
 
-    if x > 0: return lambda_zero(gamma)
-
-    if x < 0:
-        if x > x_plus:
-            return lambda_zero(gamma)
-        if x < x_moins:
-            return -lambda_zero(gamma)
-        else:
-            return 2*lambda_zero(gamma)/(x_plus - x_moins) * (x-(x_plus + x_moins)/2)
-
-
+    result = np.where(
+        x < x_moins,
+        -l_0,
+        np.where(
+            x > x_plus,
+            l_0,
+            linear_interp
+        )
+    )
+    return result
 
 def lambda_to_urho(gamma, lambda_plus, lambda_moins):
     u = 1/2 * (lambda_plus + lambda_moins)

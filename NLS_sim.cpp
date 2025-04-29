@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <cmath>
 #include <iostream>
+#include <algorithm>
 
 using namespace std;
 
@@ -26,10 +27,12 @@ public:
     double save_every;
 
     // Initial Data Parameters
+    double rho_L;
     double L;
     double amplitude;
     double exterior_density;
     double c;
+    double rho_min;
 
     Config(){
     }
@@ -67,6 +70,8 @@ public:
                 else if (key == "exterior_density") exterior_density = value;
                 else if (key == "c") c = value;
                 else if (key == "save_every") save_every = value;
+                else if (key == "rho_L") rho_L = value;
+                else if (key == "rho_min") rho_min = value;
 
                 else {
                     std::cerr << "Warning: Unknown config key '" << key << "'\n";
@@ -84,10 +89,6 @@ auto IdxToCoord(const Config& config, int idx) {
     return -config.x_range + idx * config.dx;
 }
 
-auto SolitonId(const Config& config, double x) {
-    return pow(1. / cosh(x), 2);
-}
-
 auto SlabDensity(const Config& config, double x){
     auto alpha = 1./(config.smoothing*config.dx); 
     return config.exterior_density + (config.amplitude - config.exterior_density) * 0.5 * ( std::tanh(alpha * (x + config.L))
@@ -95,17 +96,28 @@ auto SlabDensity(const Config& config, double x){
 }
 
 auto StepDensity(const Config& config, double x){
-    return config.amplitude * (0.5 - 0.5*( std::tanh((1./(config.smoothing*config.dx)) * (x))));}
+        return config.amplitude * (0.5 - 0.5*( std::tanh((1./(config.smoothing*config.dx)) * (x))));}
 
 auto ULorentzian(const Config& config, double x){
-    return config.amplitude * (pow(config.L*2., 2.))/(pow(x, 2) + pow(config.L*2., 2)) + config.exterior_density;
-
+ return config.amplitude * (pow(config.L, 2.))/(pow(x, 2) + pow(config.L, 2))+config.exterior_density;
 }
 
 auto rhoLorentzian(const Config& config, double x){
-    return   1. - 0.9*(pow(config.L*10, 2.))/(pow(x, 2) + pow(config.L*10, 2));
+    return  0.4 + (config.rho_min)*pow(config.rho_L, 2)/(pow(x, 2)+pow(config.rho_L, 2));
 
 }
+auto Test(const Config& config, double x){
+    return exp(-pow(x/config.rho_L, 2));
+}
+
+
+auto LinearDip(const Config& config, double x){
+    if(x<-config.rho_L) return 1.;
+    if(x>config.rho_L) return 1.;
+    if(x>0) return 1./config.rho_L * (x + (config.rho_L - x)*config.rho_min);
+    if(x<0) return 1./config.rho_L * (-x + (config.rho_L + x)*config.rho_min);
+
+  }
 
 auto Integrate(const Config& config, vector<double> u){
     auto phase = vector<double>{};
@@ -113,15 +125,12 @@ auto Integrate(const Config& config, vector<double> u){
     for(int i = 0; i < config.domain_size ; i++){
         sum = sum + u[i] * config.dx;
         phase.emplace_back(sum);
-        cout << sum << "\n";
     }
-    cout << phase[10] << " " << phase[11] << "\n";
     return phase;
 }
 
 
 auto toComplex(double density, double phase) {
-   // return  pow(density, 0.5) * exp(I * phase);i
    return exp(I * phase) * pow(density, 0.5);
 }
 
@@ -129,8 +138,7 @@ auto InitialDensity(const Config& config){
     auto density = vector<double>{};
     for(int i =0; i<config.domain_size; i++){
         auto x = IdxToCoord(config, i);
-        //auto dens = SlabDensity(config, x);
-        auto dens = config.exterior_density * (1./ULorentzian(config, x));
+        auto dens = rhoLorentzian(config, x);
         density.emplace_back(dens);
     } 
     return density;
@@ -163,10 +171,27 @@ auto DoubleDeriv(const Config& config, const vector<complex<double>>& psi) {
     auto gradient = vector<complex<double>>(config.domain_size);
 
     for (int i = 0; i < config.domain_size; i++) {
-        if(i==0 || i == config.domain_size -1){
-            gradient.emplace_back(0.);
+        if(i==0){
+            auto grad0 = (psi[1]   - psi[0])   / config.dx;
+            auto j      = std::imag(std::conj(psi[0]) * grad0);
+            auto u = j/std::norm(psi[0]);
+            if(std::norm(psi[i]) < 10e-5){
+                u = 0.;
+            }
+            gradient[0] = -pow(u, 2)*psi[i];
             continue;
         }
+    if(i==config.domain_size-1){
+            auto grad0 = (psi[i]   - psi[i-1])   / config.dx;
+            auto j = std::imag(std::conj(psi[i]) * grad0);
+            auto u = j/std::norm(psi[i]);
+            if(std::norm(psi[i]) < 10e-5){
+                u = 0.;
+            }
+            gradient[i] = -pow(u,2)*psi[i];
+            continue;
+        }
+
         gradient[i] = (psi[i-1] - complex<double>(2.0) * psi[i] + psi[i+1]) 
                       / (config.dx * config.dx);
     }
@@ -174,19 +199,6 @@ auto DoubleDeriv(const Config& config, const vector<complex<double>>& psi) {
     return gradient;
 }
 
-auto DoubleDerivPeriodic(const Config& config, const vector<complex<double>>& psi) {
-    auto gradient = vector<complex<double>>(config.domain_size);
-
-    for (int i = 0; i < config.domain_size; i++) {
-        int n = config.domain_size;
-        int wrapped_minus = (((i-1) % n) + n) % n;
-        int wrapped_plus = (((i+1) % n) + n) % n;
-        gradient[i] = (psi[wrapped_minus] - complex<double>(2.0) * psi[i] + psi[wrapped_plus]) 
-                      / (config.dx * config.dx);
-    }
-
-    return gradient;
-}
 
 auto linear_comb(const vector<complex<double>>& v_1, const vector<complex<double>>& v_2, complex<double> coefficient) {
     auto sum = vector<complex<double>>{};
@@ -196,13 +208,13 @@ auto linear_comb(const vector<complex<double>>& v_1, const vector<complex<double
     }
     return sum;
 }
-
+auto decroissance = 1e-4;
 auto F(const Config& config, const vector<complex<double>>& psi) {
     auto result = vector<complex<double>>{};
     auto gradient = DoubleDeriv(config, psi);
     for (int i = 0; i < config.domain_size; i++) {
         auto absval = std::norm(psi[i]);
-        auto term_1 = 0.5 * gradient[i] - config.g * psi[i] * std::pow(absval, config.exponent - 1.);
+        auto term_1 = 0.5 * gradient[i] - config.g * psi[i] * std::pow(absval, config.exponent - 1.); 
         auto final_t = I * term_1;
         result.emplace_back(final_t);
     }
