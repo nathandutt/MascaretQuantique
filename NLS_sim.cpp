@@ -138,7 +138,7 @@ auto InitialDensity(const Config& config){
     auto density = vector<double>{};
     for(int i =0; i<config.domain_size; i++){
         auto x = IdxToCoord(config, i);
-        auto dens = rhoLorentzian(config, x);
+        auto dens = SlabDensity(config, x);
         density.emplace_back(dens);
     } 
     return density;
@@ -148,7 +148,7 @@ auto InitialPhases(const Config& config){
     auto u = vector<double>{};
     for(int i =0; i<config.domain_size; i++){
         auto x = IdxToCoord(config, i);
-        auto u_i = ULorentzian(config, x);
+        auto u_i = 0;
         u.emplace_back(u_i);
     } 
 
@@ -284,7 +284,7 @@ public:
        auto current = GetCurrent(config, data);
        auto u = vector<double>{};
        for(int i = 0; i<config.domain_size; i++){
-           if(abs(data[i]) < pow(10.,-2)){
+           if(norm(data[i]) < pow(10.,-2)){
                    u.emplace_back(0.);
                    continue;
 
