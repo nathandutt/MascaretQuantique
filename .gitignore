@@ -4,3 +4,5 @@ evolution.csv
 .vscode/
 .clang_complete
 Notes/LeapfroggingVortices.pptx
+RiemannInversion/*.csv
+inverter
